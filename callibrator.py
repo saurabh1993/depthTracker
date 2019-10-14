@@ -10,7 +10,7 @@ import numpy as np
 import imutils
 import sys
 import json
-import pyrealsense as rs
+import pyrealsense2 as rs
 import requests
 import json
 
@@ -20,7 +20,7 @@ KERNEL_MORPH_DILATE_SIZE=25
 KERNEL_DILATE_ITER=5
 CONTOUR_AREA_MIN=70
 CONTOUR_AREA_MAX=180
-#DEPTH_IMAGE_MAX=5000
+DEPTH_IMAGE_MAX=5000
 DEPTH_MASK_THRESH=150
 THRESH_MAX_VALUE = 230
 THRESH_RETAIN_PEAKS = 230
@@ -199,7 +199,7 @@ def preprocess(cnts):
 
 
 # Create callibrator window
-cv2.namedWindow('Callibrator')
+cv2.namedWindow('Callibrator',cv2.WINDOW_NORMAL)
 
 # Create trackbars
 cv2.createTrackbar('KERNEL_MORPH_DILATE_SIZE','Callibrator',25,100,KERNEL_MORPH_DILATE_SIZE_CHANGE)
@@ -225,7 +225,7 @@ print(args)
 # If arguments length is >1
 # get the source
 if(len(sys.argv)>1):
-    source = argv[1]
+    source = sys.argv[1]
     if source =='cam':
         pipeline = rs.pipeline()
         pipeline.start()
@@ -266,7 +266,7 @@ def process(depthx):
 stay = 1
 nextFrame =1
 
-
+BG = cv2.imread("bg.jpg",cv2.IMREAD_GRAYSCALE)
 while(True):
 
     #start = time.time()
@@ -282,6 +282,11 @@ while(True):
         #source - camera
         else:
             depth, rgb = grabFrame(pipeline)
+            maskBG = np.abs(depth-BG) 
+            maskBG[maskBG<10] =0
+            maskBG[maskBG>=10] = 1
+            depth = maskBG*depth
+            
         nextFrame =0
     
     # Do processing    
