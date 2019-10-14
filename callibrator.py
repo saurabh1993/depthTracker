@@ -10,7 +10,9 @@ import numpy as np
 import imutils
 import sys
 import json
-#import pyrealsense as rs
+import pyrealsense as rs
+import requests
+import json
 
 #Kernel thresholds
 
@@ -223,16 +225,16 @@ print(args)
 # If arguments length is >1
 # get the source
 if(len(sys.argv)>1):
-    
+    source = argv[1]
     if source =='cam':
-        pipeline = rs.rs.pipeline()
+        pipeline = rs.pipeline()
         pipeline.start()
     else :
-        #source=sys.argv[1]
+        source=sys.argv[1]
         cap = cv2.VideoCapture(source)
     
 else:
-    cap = cv2.VideoCapture('depth_500.avi')
+    cap = cv2.VideoCapture(source)
     
 num_frame=0
 depth = None
@@ -342,8 +344,6 @@ params= {
 with open('config_data.json', 'w') as f:
     json.dump(params, f)
 
-import requests
-import json
 
 url = "https://api.staging.vedalabs.in/v1/rest/behaviours/5d9f06fb6a64eb85bb5b3014"
 
@@ -367,7 +367,3 @@ print(response.text)
 
 
 # In[ ]:
-
-
-
-
