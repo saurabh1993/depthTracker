@@ -10,7 +10,7 @@ import numpy as np
 import imutils
 import sys
 import json
-import pyrealsense2 as rs
+#import pyrealsense2 as rs
 import requests
 import json
 
@@ -23,7 +23,7 @@ CONTOUR_AREA_MAX=180
 DEPTH_IMAGE_MAX=5000
 DEPTH_MASK_THRESH=150
 THRESH_MAX_VALUE = 230
-THRESH_RETAIN_PEAKS = 230
+THRESH_RETAIN_PEAKS = 245
 KERNEL_MORPH_OPEN_SIZE=9
 THRESH_RATIO_AREA=0.55
 THRESH_WH_RATIO=0.6
@@ -105,7 +105,54 @@ def findHead(image,thresh_rem=THRESH_RETAIN_PEAKS, show= 0):
     #displayx(res,"",show)
     
     #Apply threshold to extract just the maxima(top values)
-    res[res< thresh_rem] =0
+    res[res< 220] = 0
+    #res[res>=thresh_rem] = res[res>=thresh_rem]
+    #displayx(res,"",show)
+    
+    #Apply closing operation to remove holes from the max values
+    res= cv2.morphologyEx(res, cv2.MORPH_OPEN, kernel2)
+    
+    #displayx(res,"final",show)
+    return res
+
+def findHead1(image,thresh_rem=THRESH_RETAIN_PEAKS, show= 0):
+    
+    kernel_size=KERNEL_MORPH_DILATE_SIZE
+    kernel_size_open= KERNEL_MORPH_OPEN_SIZE
+    kernel = np.ones((kernel_size,kernel_size),np.uint8)
+    kernel2 = np.ones((kernel_size_open,kernel_size_open),np.uint8)
+
+    
+    #Removes extremely high values from image
+    #image[image>THRESH_MAX_VALUE]=0
+    #displayx(image,"orig",show)
+    thresh = cv2.threshold(image, 220, 255,cv2.THRESH_BINARY)[1]
+    #displayx(thresh,"mask",show)
+    thresh[thresh==255]=1
+    
+    #Apply dilate op-> replace all the values with local maximaum
+    dilated = cv2.dilate(image,kernel,iterations=KERNEL_DILATE_ITER)
+    #displayx(dilated,"dilated",show)
+    
+    #Aplly mask on dilated image
+    res= dilated*thresh
+    #displayx(res,"final dilated",show)
+    
+    #Subtract the dilated image from original->the local maxima valuea will be ~= 0
+    res= res-image
+    #displayx(res,"",show)
+    
+    #replace the unmasked values with max so that we get boundary of maxima
+    res[thresh==0]=255
+    #displayx(res,"",show)
+   
+    #Inverse the image-> maxima become highlighted
+    res= 255-res
+    #displayx(res,"",show)
+    
+    #Apply threshold to extract just the maxima(top values)
+    res[res< thresh_rem] = 0
+    #res[res>=thresh_rem] = res[res>=thresh_rem]
     #displayx(res,"",show)
     
     #Apply closing operation to remove holes from the max values
@@ -243,7 +290,8 @@ def process(depthx):
     
     out = np.copy(depthx)
     depth =cv2.bilateralFilter(depthx,9, 75, 75)
-    final = findHead(255-depth,thresh_rem=THRESH_RETAIN_PEAKS)
+    final1 = findHead(255-depth,thresh_rem=THRESH_RETAIN_PEAKS)
+    final = findHead1(final1.copy(),thresh_rem=THRESH_RETAIN_PEAKS)
     
     #Get all Contours
     cnts = cv2.findContours(final.copy(), cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
@@ -261,7 +309,7 @@ def process(depthx):
 
     final = np.hstack((out,final))
     cv2.line(final,(out.shape[1],0),(out.shape[1],out.shape[0]),(255,255,255))
-    cv2.imshow('Callibrator',final)
+    cv2.imshow('Callibrator',final.astype('uint8'))
     
 stay = 1
 nextFrame =1
