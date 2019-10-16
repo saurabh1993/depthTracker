@@ -72,7 +72,7 @@ BG = callibrateBackGroundmin(50)
 
 if BG is not None:
     print("updated Background")
-    cv2.imwrite("bg.jpg",BG)
+    cv2.imwrite("/Users/saurabh_veda/workspace_kumar/LFS/bg.jpg",BG)
 
 cv2.destroyAllWindows()
 for i in range (0,30):

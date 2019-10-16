@@ -10,9 +10,10 @@ import numpy as np
 import imutils
 import sys
 import json
-#import pyrealsense2 as rs
+import pyrealsense2 as rs
 import requests
 import json
+import time
 
 #Kernel thresholds
 
@@ -23,7 +24,8 @@ CONTOUR_AREA_MAX=180
 DEPTH_IMAGE_MAX=5000
 DEPTH_MASK_THRESH=150
 THRESH_MAX_VALUE = 230
-THRESH_RETAIN_PEAKS = 245
+THRESH_RETAIN_PEAKS = 220
+THRESH_RETAIN_PEAKS_FINAL = 250
 KERNEL_MORPH_OPEN_SIZE=9
 THRESH_RATIO_AREA=0.55
 THRESH_WH_RATIO=0.6
@@ -69,64 +71,15 @@ def grabFrame(pipeline ,depth = True,rgb=True):
     return depthImage,colorImage 
 
 
-def findHead(image,thresh_rem=THRESH_RETAIN_PEAKS, show= 0):
+def findHead(image,thresh_rem=THRESH_RETAIN_PEAKS,show= 0,morph =True):
     
     kernel_size=KERNEL_MORPH_DILATE_SIZE
     kernel_size_open= KERNEL_MORPH_OPEN_SIZE
     kernel = np.ones((kernel_size,kernel_size),np.uint8)
     kernel2 = np.ones((kernel_size_open,kernel_size_open),np.uint8)
 
-    
-    #Removes extremely high values from image
-    image[image>THRESH_MAX_VALUE]=0
     #displayx(image,"orig",show)
     thresh = cv2.threshold(image, DEPTH_MASK_THRESH, 255,cv2.THRESH_BINARY)[1]
-    #displayx(thresh,"mask",show)
-    thresh[thresh==255]=1
-    
-    #Apply dilate op-> replace all the values with local maximaum
-    dilated = cv2.dilate(image,kernel,iterations=KERNEL_DILATE_ITER)
-    #displayx(dilated,"dilated",show)
-    
-    #Aplly mask on dilated image
-    res= dilated*thresh
-    #displayx(res,"final dilated",show)
-    
-    #Subtract the dilated image from original->the local maxima valuea will be ~= 0
-    res= res-image
-    #displayx(res,"",show)
-    
-    #replace the unmasked values with max so that we get boundary of maxima
-    res[thresh==0]=255
-    #displayx(res,"",show)
-   
-    #Inverse the image-> maxima become highlighted
-    res= 255-res
-    #displayx(res,"",show)
-    
-    #Apply threshold to extract just the maxima(top values)
-    res[res< 220] = 0
-    #res[res>=thresh_rem] = res[res>=thresh_rem]
-    #displayx(res,"",show)
-    
-    #Apply closing operation to remove holes from the max values
-    res= cv2.morphologyEx(res, cv2.MORPH_OPEN, kernel2)
-    
-    #displayx(res,"final",show)
-    return res
-
-def findHead1(image,thresh_rem=THRESH_RETAIN_PEAKS, show= 0):
-    
-    kernel_size=KERNEL_MORPH_DILATE_SIZE
-    kernel_size_open= KERNEL_MORPH_OPEN_SIZE
-    kernel = np.ones((kernel_size,kernel_size),np.uint8)
-    kernel2 = np.ones((kernel_size_open,kernel_size_open),np.uint8)
-
-    
-    #Removes extremely high values from image
-    #image[image>THRESH_MAX_VALUE]=0
-    #displayx(image,"orig",show)
-    thresh = cv2.threshold(image, 220, 255,cv2.THRESH_BINARY)[1]
     #displayx(thresh,"mask",show)
     thresh[thresh==255]=1
     
@@ -156,7 +109,8 @@ def findHead1(image,thresh_rem=THRESH_RETAIN_PEAKS, show= 0):
     #displayx(res,"",show)
     
     #Apply closing operation to remove holes from the max values
-    res= cv2.morphologyEx(res, cv2.MORPH_OPEN, kernel2)
+    if morph ==True:
+        res= cv2.morphologyEx(res, cv2.MORPH_OPEN, kernel2)
     
     #displayx(res,"final",show)
     return res
@@ -195,6 +149,10 @@ def DEPTH_MASK_THRESH_CHANGE(x):
 def THRESH_RETAIN_PEAKS_CHANGE(x):
     global THRESH_RETAIN_PEAKS
     THRESH_RETAIN_PEAKS=x
+
+def THRESH_RETAIN_PEAKS_FINAL_CHANGE(x):
+    global THRESH_RETAIN_PEAKS_FINAL
+    THRESH_RETAIN_PEAKS_FINAL=x
 
 def KERNEL_MORPH_OPEN_SIZE_CHANGE(x):
     global KERNEL_MORPH_OPEN_SIZE
@@ -251,11 +209,12 @@ cv2.namedWindow('Callibrator',cv2.WINDOW_NORMAL)
 # Create trackbars
 cv2.createTrackbar('KERNEL_MORPH_DILATE_SIZE','Callibrator',25,100,KERNEL_MORPH_DILATE_SIZE_CHANGE)
 cv2.createTrackbar('KERNEL_DILATE_ITER','Callibrator',5,10,KERNEL_DILATE_ITER_CHANGE)
+cv2.createTrackbar('THRESH_RETAIN_PEAKS_FINAL','Callibrator',250,255,THRESH_RETAIN_PEAKS_FINAL_CHANGE)
+cv2.createTrackbar('THRESH_RETAIN_PEAKS','Callibrator',220,255,THRESH_RETAIN_PEAKS_CHANGE)
 cv2.createTrackbar('CONTOUR_AREA_MIN','Callibrator',70,200,CONTOUR_AREA_MIN_CHANGE)
 cv2.createTrackbar('CONTOUR_AREA_MAX','Callibrator',180,200,CONTOUR_AREA_MAX_CHANGE)
 cv2.createTrackbar('THRESH_MAX_VALUE','Callibrator',230,255,THRESH_MAX_VALUE_CHANGE)
 cv2.createTrackbar('DEPTH_MASK_THRESH','Callibrator',150,255,DEPTH_MASK_THRESH_CHANGE)
-cv2.createTrackbar('THRESH_RETAIN_PEAKS','Callibrator',230,255,THRESH_RETAIN_PEAKS_CHANGE)
 cv2.createTrackbar('KERNEL_MORPH_OPEN_SIZE','Callibrator',9,19,KERNEL_MORPH_OPEN_SIZE_CHANGE)
 cv2.createTrackbar('ROI_START_X','Callibrator',0,720,ROI_START_X_CHANGE)
 cv2.createTrackbar('ROI_START_Y','Callibrator',0,1280,ROI_START_Y_CHANGE)
@@ -290,8 +249,11 @@ def process(depthx):
     
     out = np.copy(depthx)
     depth =cv2.bilateralFilter(depthx,9, 75, 75)
-    final1 = findHead(255-depth,thresh_rem=THRESH_RETAIN_PEAKS)
-    final = findHead1(final1.copy(),thresh_rem=THRESH_RETAIN_PEAKS)
+    depth_inv = 255-depth
+    #Removes extremely high values from image
+    depth_inv[depth_inv>THRESH_MAX_VALUE]=0
+    temp  = findHead(depth_inv,thresh_rem=THRESH_RETAIN_PEAKS,morph = True)
+    final =  findHead(temp.copy(),thresh_rem=THRESH_RETAIN_PEAKS_FINAL,morph = False)
     
     #Get all Contours
     cnts = cv2.findContours(final.copy(), cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
@@ -307,17 +269,19 @@ def process(depthx):
     cv2.rectangle(final,(ROI_STARTY,ROI_STARTX),(ROI_ENDY,ROI_ENDX),(255,255,255),2)
     cv2.rectangle(out,(ROI_STARTY,ROI_STARTX),(ROI_ENDY,ROI_ENDX),(255,255,255),2)
 
-    final = np.hstack((out,final))
+    final = np.hstack((temp,final))
     cv2.line(final,(out.shape[1],0),(out.shape[1],out.shape[0]),(255,255,255))
     cv2.imshow('Callibrator',final.astype('uint8'))
     
-stay = 1
-nextFrame =1
-
-BG = cv2.imread("bg.jpg",cv2.IMREAD_GRAYSCALE)
+stay = 0
+nextFrame =0
+count = 0
+duration =0
+BG = cv2.imread("/Users/saurabh_veda/workspace_kumar/LFS/bg.jpg",cv2.IMREAD_GRAYSCALE)
 while(True):
 
-    #start = time.time()
+    start = time.time()
+    count += 1 
     #depth, rgb = grabFrame(pipeline)
     if stay == 0 or nextFrame ==1:
         #source - video
@@ -339,6 +303,9 @@ while(True):
     
     # Do processing    
     process(depth)
+    duration += time.time()-start
+    if count % 100 ==0:
+        print ("fps:", count/duration)
     
     #get keyboard stroke value and process accordingly
     key = cv2.waitKey(20)
@@ -356,7 +323,7 @@ while(True):
         nextFrame =1
         
     
-    
+  
 #Release cap
 if cap is not None:
     cap.release()
@@ -382,9 +349,10 @@ params= {
         "CONTOUR_AREA_MAX":CONTOUR_AREA_MAX,
         "DEPTH_MASK_THRESH":DEPTH_MASK_THRESH,
         "THRESH_RETAIN_PEAKS":THRESH_RETAIN_PEAKS,
+        "THRESH_RETAIN_PEAKS_FINAL":THRESH_RETAIN_PEAKS_FINAL,
         "THRESH_MAX_VALUE":THRESH_MAX_VALUE,
         "KERNEL_MORPH_OPEN_SIZE":KERNEL_MORPH_OPEN_SIZE,
-        "DEPTH_IMAGE_MAX":5000,
+        "DEPTH_IMAGE_MAX":DEPTH_IMAGE_MAX,
         "video_source":"camera",
         "TRACKER_RETAIN_FRAMES":TRACKER_RETAIN_FRAMES,
         "TRACKER_MAX_DIST_THESH":TRACKER_MAX_DIST_THESH,
